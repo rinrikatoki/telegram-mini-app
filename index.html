@@ -240,54 +240,44 @@
     }
 
     async function fetchCrypto() {
-    loading.style.display = 'block';
-
-    try {
-        if (searchTerm.length >= 2) {
+      if (searchTerm.length >= 2) {
         isSearching = true;
-        const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchTerm}`);
-        const searchData = await searchRes.json();
-
-        // Try to find an exact match by symbol, name, or ID
-        const exactMatch = searchData.coins.find(c =>
-            c.symbol.toLowerCase() === searchTerm ||
-            c.id.toLowerCase() === searchTerm ||
-            c.name.toLowerCase() === searchTerm
+        // Filter matching coins by name or symbol
+        const matchedCoins = allCoinsList.filter(c =>
+          c.name.toLowerCase().includes(searchTerm) || c.symbol.toLowerCase().includes(searchTerm)
         );
-
-        let coinIdsToFetch = [];
-
-        if (exactMatch) {
-            coinIdsToFetch.push(exactMatch.id);
+        if (matchedCoins.length === 0) {
+          cryptoData = [];
+          renderList();
+          updatePagination();
+          return;
         }
+        // Pagination of matched coins manually
+        const start = (currentPage -1) * pageSize;
+        const pagedCoins = matchedCoins.slice(start, start + pageSize);
 
-        // Add 5 partial matches (excluding exact match)
-        const additionalMatches = searchData.coins
-            .filter(c => !coinIdsToFetch.includes(c.id))
-            .slice(0, 5)
-            .map(c => c.id);
-
-        coinIdsToFetch = [...coinIdsToFetch, ...additionalMatches];
-
-        if (coinIdsToFetch.length > 0) {
-            const marketRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${coinIdsToFetch.join(',')}&sparkline=true`);
-            cryptoData = await marketRes.json();
-        } else {
-            cryptoData = [];
+        // Fetch market data for pagedCoins ids
+        const ids = pagedCoins.map(c => c.id).join(',');
+        if (!ids) {
+          cryptoData = [];
+          renderList();
+          updatePagination();
+          return;
         }
-        } else {
-        isSearching = false;
-        const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=true`);
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=${pageSize}&page=1&sparkline=false`;
+        const res = await fetch(url);
         cryptoData = await res.json();
-        }
-
         renderList();
-        updatePagination(1);
-    } catch (error) {
-        console.error('Failed to fetch crypto data:', error);
-    } finally {
-        loading.style.display = 'none';
-    }
+        updatePagination(matchedCoins.length);
+      } else {
+        // Not searching, show top coins by page
+        isSearching = false;
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=true`;
+        const res = await fetch(url);
+        cryptoData = await res.json();
+        renderList();
+        updatePagination(1000); // Approximate large number for top coins
+      }
     }
 
     function renderList() {
