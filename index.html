@@ -295,8 +295,25 @@
     }
 
     async function fetchAllCoinsList() {
-      const res = await fetch("https://api.coingecko.com/api/v3/coins/list");
-      allCoinsList = await res.json();
+        const cached = localStorage.getItem('allCoinsList');
+        const cachedTime = localStorage.getItem('allCoinsListTime');
+        const now = Date.now();
+
+        // Use cached list if available and less than 6 hours old
+        if (cached && cachedTime && (now - parseInt(cachedTime)) < 6 * 60 * 60 * 1000) {
+            allCoinsList = JSON.parse(cached);
+            return;
+        }
+
+        try {
+            const res = await fetch("https://api.coingecko.com/api/v3/coins/list");
+            allCoinsList = await res.json();
+            localStorage.setItem('allCoinsList', JSON.stringify(allCoinsList));
+            localStorage.setItem('allCoinsListTime', now.toString());
+        } catch (err) {
+            console.error("Failed to fetch coins list", err);
+            allCoinsList = cached ? JSON.parse(cached) : [];
+        }
     }
 
     async function fetchCrypto() {
