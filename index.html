@@ -240,119 +240,198 @@
     }
 
     async function fetchCrypto() {
-      if (searchTerm.length >= 2) {
+    if (searchTerm.length >= 2) {
         isSearching = true;
-        // Filter matching coins by name or symbol
-        const matchedCoins = allCoinsList.filter(c =>
-          c.name.toLowerCase().includes(searchTerm) || c.symbol.toLowerCase().includes(searchTerm)
-        );
-        if (matchedCoins.length === 0) {
-          cryptoData = [];
-          renderList();
-          updatePagination();
-          return;
+        // Show loading state while searching
+        cryptoListEl.innerHTML = '<p>Searching...<p>';
+        
+        // Filter matching coins - improved search logic
+        const matchedCoins = allCoinsList.filter(c => {
+        const nameMatch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const symbolExactMatch = c.symbol.toLowerCase() === searchTerm.toLowerCase();
+        const symbolPartialMatch = c.symbol.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        return symbolExactMatch || nameMatch || symbolPartialMatch;
+        });
+
+        // Sort results to prioritize exact matches first
+        matchedCoins.sort((a, b) => {
+        const aExactSymbol = a.symbol.toLowerCase() === searchTerm.toLowerCase();
+        const bExactSymbol = b.symbol.toLowerCase() === searchTerm.toLowerCase();
+        
+        // Exact symbol matches first
+        if (aExactSymbol && !bExactSymbol) return -1;
+        if (!aExactSymbol && bExactSymbol) return 1;
+        
+        // Then name matches that start with search term
+        const aNameStartsWith = a.name.toLowerCase().startsWith(searchTerm.toLowerCase());
+        const bNameStartsWith = b.name.toLowerCase().startsWith(searchTerm.toLowerCase());
+        if (aNameStartsWith && !bNameStartsWith) return -1;
+        if (!aNameStartsWith && bNameStartsWith) return 1;
+        
+        // Then by market cap rank (if available)
+        if (a.market_cap_rank && b.market_cap_rank) {
+            return a.market_cap_rank - b.market_cap_rank;
         }
+        
+        // Then other matches
+        return 0;
+        });
+
+        if (matchedCoins.length === 0) {
+        cryptoData = [];
+        renderList();
+        updatePagination();
+        return;
+        }
+
         // Pagination of matched coins manually
-        const start = (currentPage -1) * pageSize;
+        const start = (currentPage - 1) * pageSize;
         const pagedCoins = matchedCoins.slice(start, start + pageSize);
 
         // Fetch market data for pagedCoins ids
         const ids = pagedCoins.map(c => c.id).join(',');
         if (!ids) {
-          cryptoData = [];
-          renderList();
-          updatePagination();
-          return;
+        cryptoData = [];
+        renderList();
+        updatePagination();
+        return;
         }
-        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=${pageSize}&page=1&sparkline=false`;
+        
+        try {
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=${pageSize}&page=1&sparkline=true`;
         const res = await fetch(url);
         cryptoData = await res.json();
+        
+        // Sort the fetched data to maintain our priority order
+        const idOrder = pagedCoins.map(c => c.id);
+        cryptoData.sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id));
+        
         renderList();
         updatePagination(matchedCoins.length);
-      } else {
+        } catch (error) {
+        console.error('Error fetching coin data:', error);
+        cryptoData = [];
+        renderList();
+        updatePagination();
+        }
+    } else {
         // Not searching, show top coins by page
         isSearching = false;
+        cryptoListEl.innerHTML = '<p>Loading top cryptocurrencies...<p>';
+        
+        try {
         const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=true`;
         const res = await fetch(url);
         cryptoData = await res.json();
         renderList();
         updatePagination(1000); // Approximate large number for top coins
-      }
+        } catch (error) {
+        console.error('Error fetching top coins:', error);
+        cryptoData = [];
+        renderList();
+        updatePagination();
+        }
+    }
     }
 
     function renderList() {
-      if (cryptoData.length === 0) {
-        cryptoListEl.innerHTML = '<p>No coins found.</p>';
+    if (cryptoData.length === 0) {
+        if (isSearching && searchTerm.length >= 2) {
+        // Show "no results" only after a brief delay to avoid flickering
+        setTimeout(() => {
+            if (cryptoData.length === 0) {
+            cryptoListEl.innerHTML = `<p>No coins found matching "${searchTerm}"</p>`;
+            }
+        }, 500);
+        } else {
+        cryptoListEl.innerHTML = '<p>No cryptocurrency data available.</p>';
+        }
         return;
-      }
+    }
 
-      // Sort coins based on currentSort
-      cryptoData.sort((a, b) => {
+    // Sort coins based on currentSort
+    cryptoData.sort((a, b) => {
         if (currentSort === 'price') return b.current_price - a.current_price;
         if (currentSort === 'change') return b.price_change_percentage_24h - a.price_change_percentage_24h;
         if (currentSort === 'marketcap') return b.market_cap - a.market_cap;
         return 0;
-      });
+    });
 
-      cryptoListEl.innerHTML = '';
-      cryptoData.forEach((coin, idx) => {
+    cryptoListEl.innerHTML = '';
+    
+    cryptoData.forEach((coin) => {
         const priceChange = coin.price_change_percentage_24h || 0;
         const coinEl = document.createElement('div');
         coinEl.className = 'crypto';
         coinEl.title = 'Click to see details';
         coinEl.dataset.coinId = coin.id;
 
+        // Format price - show more decimals for very small prices
+        let priceDisplay;
+        if (coin.current_price < 0.01) {
+        priceDisplay = coin.current_price.toLocaleString(undefined, {minimumFractionDigits: 6, maximumFractionDigits: 8});
+        } else if (coin.current_price < 1) {
+        priceDisplay = coin.current_price.toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 6});
+        } else {
+        priceDisplay = coin.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+
         coinEl.innerHTML = `
-          <div class="header">
+        <div class="header">
             <div class="rank">${coin.market_cap_rank || '-'}</div>
-            <img src="${coin.image}" alt="${coin.name}" />
+            <img src="${coin.image}" alt="${coin.name}" onerror="this.src='https://via.placeholder.com/36';" />
             <div class="name-symbol">${coin.name} (${coin.symbol.toUpperCase()})</div>
             <div class="price-change ${priceChange >= 0 ? 'green' : 'red'}">
-              $${coin.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6})}
-              <br>
-              <small>${priceChange.toFixed(2)}%</small>
+            $${priceDisplay}
+            <br>
+            <small>${priceChange.toFixed(2)}%</small>
             </div>
-          </div>
-          <div class="chart-container">
+        </div>
+        <div class="chart-container">
             <canvas id="chart-${coin.id}"></canvas>
-          </div>
+        </div>
         `;
 
         cryptoListEl.appendChild(coinEl);
 
         // Fetch sparkline data and render chart
-        if (coin.sparkline_in_7d && coin.sparkline_in_7d.price) {
-          const ctx = document.getElementById(`chart-${coin.id}`).getContext('2d');
-          new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: coin.sparkline_in_7d.price.map((_, i) => i),
-              datasets: [{
-                data: coin.sparkline_in_7d.price,
-                borderColor: priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                borderWidth: 1,
-                fill: false,
-                pointRadius: 0,
-                tension: 0.2
-              }]
-            },
-            options: {
-              responsive: true,
-              scales: {
-                x: {display: false},
-                y: {display: false}
-              },
-              plugins: {
-                legend: {display: false}
-              },
-              elements: {line: {borderWidth: 2}}
+        if (coin.sparkline_in_7d?.price) {
+        setTimeout(() => { // Small delay to ensure DOM is ready
+            const ctx = document.getElementById(`chart-${coin.id}`)?.getContext('2d');
+            if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                labels: coin.sparkline_in_7d.price.map((_, i) => i),
+                datasets: [{
+                    data: coin.sparkline_in_7d.price,
+                    borderColor: priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                    borderWidth: 1,
+                    fill: false,
+                    pointRadius: 0,
+                    tension: 0.2
+                }]
+                },
+                options: {
+                responsive: true,
+                scales: {
+                    x: { display: false },
+                    y: { display: false }
+                },
+                plugins: {
+                    legend: { display: false }
+                },
+                elements: { line: { borderWidth: 2 } }
+                }
+            });
             }
-          });
+        }, 50);
         }
 
         // Click to open modal
         coinEl.onclick = () => openCoinModal(coin.id);
-      });
+    });
     }
 
     function updatePagination(totalItems) {
