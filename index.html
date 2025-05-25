@@ -1,27 +1,126 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Telegram Mini App</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Top 10 Cryptos</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-    button { padding: 10px 20px; font-size: 16px; }
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: var(--tg-theme-bg-color, #ffffff);
+      color: var(--tg-theme-text-color, #000000);
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+    #sort-controls {
+      margin-bottom: 15px;
+    }
+    button {
+      margin-right: 10px;
+      padding: 6px 10px;
+      border: none;
+      background-color: #0088cc;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button.active {
+      background-color: #005f7a;
+    }
+    .crypto {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    .coin-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .coin-info img {
+      width: 24px;
+      height: 24px;
+      border-radius: 12px;
+    }
+    .red { color: red; }
+    .green { color: green; }
   </style>
 </head>
 <body>
-  <h1>Hello from Telegram Mini App!</h1>
-  <p id="user-info">Loading...</p>
-  <button onclick="sendData()">Send to Bot</button>
+  <h1>Top 10 Cryptocurrencies</h1>
+
+  <div id="sort-controls">
+    Sort by:
+    <button id="sort-price" class="active">Price ↓</button>
+    <button id="sort-change">24h Change ↓</button>
+  </div>
+
+  <div id="crypto-list">Loading...</div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    document.getElementById('user-info').innerText = 
-      `Hello ${tg.initDataUnsafe.user?.first_name || 'user'}!`;
+    let cryptoData = [];
+    let currentSort = 'price'; // 'price' or 'change'
 
-    function sendData() {
-      tg.sendData("Hello from mini app!");
+    async function fetchCrypto() {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false"
+      );
+      cryptoData = await res.json();
+      renderList();
     }
+
+    function renderList() {
+      const list = document.getElementById("crypto-list");
+      list.innerHTML = "";
+
+      // Sort data before rendering
+      if (currentSort === 'price') {
+        cryptoData.sort((a,b) => b.current_price - a.current_price);
+      } else if (currentSort === 'change') {
+        cryptoData.sort((a,b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
+      }
+
+      cryptoData.forEach((coin) => {
+        const changeClass = coin.price_change_percentage_24h >= 0 ? 'green' : 'red';
+        const item = document.createElement("div");
+        item.className = "crypto";
+        item.innerHTML = `
+          <div class="coin-info">
+            <img src="${coin.image}" alt="${coin.name} logo" />
+            <div>${coin.name} (${coin.symbol.toUpperCase()})</div>
+          </div>
+          <div>
+            $${coin.current_price.toFixed(2)} 
+            <span class="${changeClass}">(${coin.price_change_percentage_24h.toFixed(2)}%)</span>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // Sort buttons logic
+    document.getElementById('sort-price').addEventListener('click', () => {
+      currentSort = 'price';
+      document.getElementById('sort-price').classList.add('active');
+      document.getElementById('sort-change').classList.remove('active');
+      renderList();
+    });
+
+    document.getElementById('sort-change').addEventListener('click', () => {
+      currentSort = 'change';
+      document.getElementById('sort-change').classList.add('active');
+      document.getElementById('sort-price').classList.remove('active');
+      renderList();
+    });
+
+    fetchCrypto();
+    setInterval(fetchCrypto, 60000); // Refresh every 60s
   </script>
 </body>
 </html>
